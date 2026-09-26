@@ -27,6 +27,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -106,17 +108,40 @@ class AuthServiceTest {
         assertThat(authService.validate(expired, 7L)).isEmpty();
     }
 
+    @Test
+    void logout_ends_the_session_so_its_token_no_longer_validates() throws Exception {
+        String token = login();
+        Session session = givenActiveSession(token);
+
+        assertThat(authService.logout(token, 7L)).isTrue();
+
+        assertThat(session.getSessionStatus()).isEqualTo(SessionStatus.ENDED);
+        assertThat(authService.validate(token, 7L)).isEmpty();
+    }
+
+    @Test
+    void logout_of_an_unknown_or_ended_session_changes_nothing() throws Exception {
+        assertThat(authService.logout("no-such-token", 7L)).isFalse();
+
+        String token = login();
+        givenActiveSession(token).setSessionStatus(SessionStatus.ENDED);
+        assertThat(authService.logout(token, 7L)).isFalse();
+
+        verify(sessionRepository, times(1)).save(any(Session.class)); // only login's
+    }
+
     private String login() throws Exception {
         return authService.login(user.getEmail(), "correct-password").getHeaders().getFirst("AUTH_TOKEN");
     }
 
-    private void givenActiveSession(String token) {
+    private Session givenActiveSession(String token) {
         Session session = new Session();
         session.setToken(token);
         session.setUser(user);
         session.setSessionStatus(SessionStatus.ACTIVE);
         session.setExpiryAt(inMinutes(60));
         when(sessionRepository.findSessionByTokenAndUser_Id(token, user.getId())).thenReturn(Optional.of(session));
+        return session;
     }
 
     private static Date inMinutes(long minutes) {

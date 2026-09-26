@@ -100,6 +100,18 @@ public class AuthService {
         return response;
     }
 
+    // Ends the active session for this token, so it stops validating. False if there is no active session.
+    public boolean logout(String token, Long userId) {
+        Optional<Session> sessionOptional = sessionRepository.findSessionByTokenAndUser_Id(token, userId);
+        if (sessionOptional.isEmpty() || sessionOptional.get().getSessionStatus() != SessionStatus.ACTIVE) {
+            return false;
+        }
+        Session session = sessionOptional.get();
+        session.setSessionStatus(SessionStatus.ENDED);
+        sessionRepository.save(session);
+        return true;
+    }
+
     public Optional<UserDto> validate(String token, Long UserId){
         // Only tokens this service signed, and that haven't expired, can match a session.
         try {

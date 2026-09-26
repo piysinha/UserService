@@ -31,10 +31,11 @@ public class AuthController {
         return authService.login(requestDto.getEmail(), requestDto.getPassword());
     }
 
-//    @PostMapping("/Logout")
-//    public ResponseEntity<Void> logout (@RequestBody LogoutRequestDto requestDto){
-//        return authService.logout(requestDto.getToken(),requestDto.getUserId());
-//    }
+    @PostMapping("/Logout")
+    public ResponseEntity<Void> logout (@RequestBody LogoutRequestDto requestDto){
+        boolean loggedOut = authService.logout(requestDto.getToken(), requestDto.getUserId());
+        return new ResponseEntity<>(loggedOut ? HttpStatus.OK : HttpStatus.NOT_FOUND);
+    }
 
     @PostMapping("/SignUp")
     public ResponseEntity<UserDto> signUp(@RequestBody SignUpRequestDto requestDto) throws UserAlreadyExistsException {
