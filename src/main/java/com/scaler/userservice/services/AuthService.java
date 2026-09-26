@@ -9,25 +9,29 @@ import com.scaler.userservice.exceptions.UserDoesNotExistException;
 import com.scaler.userservice.models.Session;
 import com.scaler.userservice.models.SessionStatus;
 import com.scaler.userservice.models.User;
-import io.jsonwebtoken.JwtBuilder;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import org.apache.commons.lang3.RandomStringUtils;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MultiValueMap;
 import org.springframework.util.MultiValueMapAdapter;
 
+import javax.crypto.SecretKey;
+import java.time.Duration;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class AuthService {
+    // How long a login lasts: both the token's expiry and its session's.
+    static final Duration TOKEN_VALIDITY = Duration.ofHours(24);
+
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
@@ -35,10 +39,15 @@ public class AuthService {
     @Autowired
     private SessionRepository sessionRepository;
 
-    public AuthService(SessionRepository sessionRepository, UserRepositories userRepositories, PasswordEncoder passwordEncoder) {
+    private final SecretKey jwtKey;
+
+    public AuthService(SessionRepository sessionRepository, UserRepositories userRepositories, PasswordEncoder passwordEncoder,
+                       @Value("${userservice.jwt.secret}") String jwtSecret) {
         this.sessionRepository = sessionRepository;
         this.userRepositories = userRepositories;
         this.passwordEncoder = passwordEncoder;
+        // A Base64-encoded key; hmacShaKeyFor refuses one shorter than 256 bits, so a weak key fails at startup.
+        this.jwtKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }
 
     public UserDto signUp(String email, String password) throws UserAlreadyExistsException {
@@ -63,13 +72,16 @@ public class AuthService {
             throw new PasswordDoesNotMatchException("Password does not match");
         }
 
-        // String token = RandomStringUtils.randomAscii(10);
-
-        // Implemented JWT Token
-        MultiValueMap<String, String> claimsMap = new MultiValueMapAdapter<>(new HashMap<>());
-        claimsMap.add("email", user.getEmail());
-        claimsMap.add("password", user.getPassword());
-        String jwsToken = Jwts.builder().claims(claimsMap).compact();
+        // A signed JWT that expires. It carries who the user is, never their password hash.
+        Date issuedAt = new Date();
+        Date expiresAt = Date.from(issuedAt.toInstant().plus(TOKEN_VALIDITY));
+        String jwsToken = Jwts.builder()
+                .subject(String.valueOf(user.getId()))
+                .claim("email", user.getEmail())
+                .issuedAt(issuedAt)
+                .expiration(expiresAt)
+                .signWith(jwtKey)
+                .compact();
 
         MultiValueMapAdapter<String , String> map = new MultiValueMapAdapter<String, String>(new HashMap<>());
         map.add("AUTH_TOKEN", jwsToken);
@@ -77,6 +89,7 @@ public class AuthService {
         Session session = new Session();
         session.setSessionStatus(SessionStatus.ACTIVE);
         session.setToken(jwsToken);
+        session.setExpiryAt(expiresAt);
         session.setUser(user);
         sessionRepository.save(session);
 
@@ -88,6 +101,13 @@ public class AuthService {
     }
 
     public Optional<UserDto> validate(String token, Long UserId){
+        // Only tokens this service signed, and that haven't expired, can match a session.
+        try {
+            Jwts.parser().verifyWith(jwtKey).build().parseSignedClaims(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            return Optional.empty();
+        }
+
         Optional<Session> sessionOptional = sessionRepository.findSessionByTokenAndUser_Id(token , UserId);
         if (sessionOptional.isEmpty()) {
             return Optional.empty();
