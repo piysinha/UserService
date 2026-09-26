@@ -19,3 +19,12 @@ List of Services to be created in the auth controller
 We are going to create a Role Controler in which we will creating a new role of the 
 user.
 
+
+## Configuration
+
+The service reads these environment variables:
+
+- `USERSERVICE_DB_URL` and `USERSERVICE_DB_USERNAME`: the MySQL database.
+- `USERSERVICE_JWT_SECRET`: a Base64-encoded key of at least 256 bits that signs login tokens. Generate one with `openssl rand -base64 32`. The service won't start with a shorter key.
+
+Login tokens expire after 24 hours. `POST /auth/Logout` with `{"userId": ..., "token": "..."}` ends the session early.
