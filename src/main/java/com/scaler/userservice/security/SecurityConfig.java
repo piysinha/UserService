@@ -70,9 +70,12 @@ public class SecurityConfig {
             throws Exception {
         http
                 .authorizeHttpRequests((authorize) -> authorize
-                        .requestMatchers("/auth/SignUp").permitAll()
+                        // The JSON auth API. Clients log in here, so these can't require being logged in.
+                        .requestMatchers("/auth/SignUp", "/auth/Login", "/auth/Validate", "/auth/Logout").permitAll()
                         .anyRequest().authenticated()
                 )
+                // CSRF protection guards the browser session cookie, which the JSON auth API doesn't use.
+                .csrf((csrf) -> csrf.ignoringRequestMatchers("/auth/**"))
                 // Form login handles the redirect to the login page from the
                 // authorization server filter chain
                 .formLogin(Customizer.withDefaults());
